@@ -1,0 +1,84 @@
+name: Validate persistent workspace
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/integrate_workspace.py'
+      - 'site/js/local-store.js'
+      - 'site/js/workspace-ui.js'
+      - 'tests/workspace_e2e.py'
+      - '.github/workflows/persistent-workspace.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: persistent-workspace-validation
+  cancel-in-progress: false
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    container: mcr.microsoft.com/playwright/python:v1.63.0-noble
+    permissions:
+      contents: write
+    outputs:
+      tested_commit: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+      - name: Install pinned browser test library
+        run: pip install playwright==1.63.0
+      - name: Integrate source changes (no backend connection)
+        run: python tools/integrate_workspace.py
+      - name: Native IndexedDB and two-browser UI regression
+        run: python tests/workspace_e2e.py
+      - name: Save synthetic-only test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persistent-workspace-validation
+          path: |
+            test-results/workspace/
+            site/js/app.js
+            site/js/local-store.js
+            site/js/workspace-ui.js
+            site/index.html
+          retention-days: 14
+      - name: Commit only validated application source
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add site/js/app.js site/js/local-store.js site/index.html
+          if ! git diff --cached --quiet; then
+            git commit -m 'Enable tested persistent local library and batch review actions'
+            git push origin HEAD:main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: browser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.browser.outputs.tested_commit }}
+      - name: Verify shipped JavaScript syntax
+        run: |
+          for f in site/assets/*.js site/js/*.js site/config.js; do node --check "$f"; done
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
+        id: deployment
