@@ -1,39 +1,53 @@
 name: Deploy review frontend
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
 concurrency:
   group: pages
   cancel-in-progress: false
-
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    container: mcr.microsoft.com/playwright/python:v1.63.0-noble
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned native-browser test library
+        run: pip install playwright==1.63.0
+      - name: Build persistent local library and bulk review controls
+        run: python tools/integrate_workspace.py
+      - name: Test reload, browser restart, backups and bulk operations
+        run: python tests/workspace_e2e.py
+      - name: Retain synthetic-only validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-validation
+          path: |
+            test-results/workspace/
+            site/js/app.js
+            site/js/local-store.js
+            site/js/workspace-ui.js
+            site/index.html
+          retention-days: 14
+      - name: Package only the tested frontend
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Verify shipped JavaScript syntax
-        run: |
-          for f in site/assets/*.js site/js/*.js site/config.js; do node --check "$f"; done
-
       - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: site
-
-      - name: Deploy
-        id: deployment
+      - name: Deploy validated frontend
         uses: actions/deploy-pages@v4
+        id: deployment
