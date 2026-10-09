@@ -35,4 +35,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Exercise migration, RLS and management RPCs with synthetic identities
-        run: psql --no-psqlrc -v ON_ERROR_STOP=1 -f tests/management-sql.sql
+        run: |
+          psql --no-psqlrc -v ON_ERROR_STOP=1 -f tests/management-sql.sql > management-test.log 2>&1 || { cat management-test.log; exit 1; }
+          cat management-test.log
+      - name: Save tested migration and synthetic test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: management-sql-validated
+          path: |
+            supabase/migrations/04_Enable_Delete_And_Trash.sql
+            management-test.log
+          if-no-files-found: error
+          retention-days: 14
