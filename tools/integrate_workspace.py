@@ -3,10 +3,12 @@ Does not connect to Supabase, modify policies, or change source decoders.
 Exact replacement guards prevent silently patching an unexpected app version.
 """
 from pathlib import Path
+from workspace_fixes import apply
 p=Path(__file__).resolve().parents[1]
 s=(p/'site/js/app.js').read_text()
 if 'persistent-device-workspace-v2' in s:
-    print('Workspace application is already integrated.'); raise SystemExit(0)
+    (p/'site/js/app.js').write_text(apply(s))
+    print('Workspace application already integrated; reviewed lifecycle fixes applied.'); raise SystemExit(0)
 def replace(a,b):
  global s
  if a not in s: raise Exception('missing '+a[:140])
@@ -132,12 +134,11 @@ replace(start,"""(async()=>{
 s=s.replace('Back to staging','Back to local library').replace('All staged files','All local files')
 s=s.replace('release the paused upload, reselect source files and choose Resume draft','release the paused upload and select saved local fields to Resume draft')
 s=s.replace('Imported files are not shared yet. Empty/draft collections are managed separately, not counted as shared collections.', 'Files are saved on this device; no cloud upload until you confirm. Empty or draft collections are managed separately.')
-(p/'site/js/app.js').write_text('/* persistent-device-workspace-v2 */\n'+s)
+(p/'site/js/app.js').write_text('/* persistent-device-workspace-v2 */\n'+apply(s))
 index=p/'site/index.html';html=index.read_text()
 html=html.replace('<script src="js/app.js"></script>', '<script src="js/local-store.js?v=2.0"></script><script src="js/app.js?v=2.0"></script>')
 html=html.replace('<script src="js/management.js"></script>', '<script src="js/management.js"></script><script src="js/workspace-ui.js?v=2.0"></script>')
 index.write_text(html)
-# Abort a failing local write transaction cleanly, including quota failures.
 f=p/'site/js/local-store.js';t=f.read_text()
 t=t.replace("let existing=null;\n  const q=rs.get(id);q.onsuccess=()=>{existing=q.result;if(existing)return;for(const a of assets)tx.objectStore('assets').put(a);rs.put(row);};\n  await done;", "let existing=null,writeError=null;\n  const q=rs.get(id);q.onsuccess=()=>{try{existing=q.result;if(existing)return;for(const a of assets)tx.objectStore('assets').put(a);rs.put(row);}catch(e){writeError=e;tx.abort();}};\n  try{await done;}catch(e){throw writeError||e;}")
 f.write_text(t)
