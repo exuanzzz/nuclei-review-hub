@@ -37,7 +37,7 @@ const dialog=el('dialog');dialog.id='managementDialog';
 const close=el('button','×');close.type='button';close.setAttribute('aria-label','Close data management');
 const closeWrap=el('div',undefined,'dialog-close');closeWrap.append(close);close.onclick=()=>dialog.close();
 const title=el('h2','Manage shared data'),note=el('div',undefined,'management-note');
-note.textContent='Moving to Trash hides the collection or image, all its source versions and its feedback from the workspace. Files are retained and can be restored. Trash does not free Storage space. No permanent file deletion is enabled.';
+note.textContent='Moving to Trash hides the collection or image, all its source versions and its feedback from the workspace. Files are retained and can be restored. Trash does not free Storage space. No permanent file deletion is enabled. Empty and unfinished collections remain listed here, but are not counted in the shared library or its collection filter.';
 const tabs=el('div',undefined,'manage-tabs'),collectionsTab=el('button','Collections'),trashTab=el('button','Trash'),reload=el('button','Refresh');
 collectionsTab.id='managementCollectionsTab';trashTab.id='managementTrashTab';tabs.append(collectionsTab,trashTab,reload);
 const list=el('div');list.id='managementList';
@@ -54,7 +54,7 @@ async function renderManager(which=tab){
   for(const r of rows){
    const inTrash=tab==='trash',kind=inTrash?r.item_type:'collection',id=inTrash?r.item_id:r.id,name=inTrash?r.item_name:r.title;
    const row=el('div',undefined,'management-row'),info=el('div');info.append(el('strong',name));
-   info.append(el('small',inTrash?`${kind} · ${r.owner_name} · ${r.collection_name}`:`${r.kind} · ${r.state} · ${r.id.slice(0,8)}`));row.append(info);
+   info.append(el('small',inTrash?`${kind} · ${r.owner_name} · ${r.collection_name}`:`${r.kind} · ${r.state} · ${H.getShared().filter(f=>f.collection_id===r.id).length} shared images · ${r.id.slice(0,8)}`));row.append(info);
    if(inTrash||own(r.owner_id)){
     const btn=el('button',inTrash?'Restore':'Move collection to Trash',inTrash?'':'danger-quiet');btn.dataset.targetId=id;btn.dataset.manageAction=inTrash?'restore':'trash';
     btn.onclick=()=>operation(async()=>{
