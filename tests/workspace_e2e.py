@@ -2,10 +2,20 @@
 All source images are the repository's clearly marked synthetic fixtures.
 """
 from pathlib import Path
-import base64, copy, datetime, functools, hashlib, http.server, io, json, re, tempfile, threading, uuid, zipfile
+import base64, copy, datetime, functools, hashlib, http.server, io, json, re, tempfile, threading, uuid, zipfile, time
 from urllib.parse import urlparse, parse_qs, unquote
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, Page, TimeoutError as BrowserTimeout
 ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'test-results/workspace';OUT.mkdir(parents=True,exist_ok=True)
+# Wait with CDP-backed evaluate. Do not add unsafe-eval to the site's CSP.
+def wait_predicate(self, expression, *, arg=None, timeout=None, polling=None):
+ deadline=time.monotonic()+(60000 if timeout is None else timeout)/1000
+ while True:
+  if self.evaluate(expression,arg):return None
+  if timeout!=0 and time.monotonic()>=deadline:
+   self.screenshot(path=str(OUT/'failure.png'));(OUT/'failure_dom.html').write_text(self.content())
+   raise BrowserTimeout('Predicate timed out: '+expression)
+  self.wait_for_timeout(50)
+Page.wait_for_function=wait_predicate
 A='11111111-1111-4111-8111-111111111111';B='22222222-2222-4222-8222-222222222222'
 tables={t:[] for t in ['nr_collections','nr_fields','nr_versions','nr_comments','nr_proposals','nr_reviews']}
 tables['nr_members']=[dict(user_id=A,display_name='Synthetic tester A',role='admin',active=True),dict(user_id=B,display_name='Synthetic tester B',role='reviewer',active=True)]
@@ -129,7 +139,6 @@ try:
   check('Full browser-process close/reopen keeps the native IndexedDB library',q.evaluate('Hub.getLocal().length')==2 and hashes(q)==originals)
   q.click('#demo');idle(q);check('Reimporting identical source bytes does not duplicate records',q.evaluate('Hub.getLocal().length')==2)
   open_local(q);q.click('[data-panel="comments"]');q.click('#select-comments');q.click('#remove-comments');q.wait_for_selector('#batchResultDialog[open]');close_result(q);check('Local comments support multi-select removal',q.evaluate('Hub.getCurrent().feedback.comments.every(r=>!!r.removed_at)'));q.click('#closeViewer');q.reload();idle(q);open_local(q);check('Local comment removal remains after reload',q.evaluate('Hub.getCurrent().feedback.comments.every(r=>!!r.removed_at)'));q.click('#closeViewer')
-  # Actual importer: add two renamed synthetic fields in a ZIP, without replacing the library.
   q.click('#importOpen');q.fill('#importTitle','Additional synthetic batch')
   q.evaluate("async()=>{const r=(await ReviewDemo.records()).find(x=>x.kind==='fiji'),items=[];for(const n of ['extra_a','extra_b']){items.push({name:n+'.ome_DAPI.tif',bytes:await r.image.bytes()},{name:n+'_rois.zip',bytes:await r.annotations[0].bytes()});}await Hub.importFiles([new File([await GTCore.makeZip(items)],'extra.zip')]);}");idle(q)
   check('A second ZIP appends two fields and retains the first batch',q.evaluate('Hub.getLocal().length')==4)
@@ -150,9 +159,7 @@ try:
   check('Cloud Trash does not erase raw stored files',len(objects)==4)
   q.click('#manageTrash');q.wait_for_selector('.management-choice');q.click('#selectManagerItems');q.click('#applyManagerBatch');q.wait_for_selector('#batchResultDialog[open]');close_result(q);q.locator('#managementDialog [aria-label="Close data management"]').click();idle(q)
   check('Trash supports multi-select restore',q.evaluate('Hub.getShared().length')==2)
-  # Second browser profile: no device library leakage, cloud permission UI preserved.
   other=playwright.chromium.launch_persistent_context(tempfile.mkdtemp(prefix='workspace-other-'),headless=True,args=['--no-sandbox']);setup(other);b=page(other);login(b,'b@test.invalid');check('A different browser profile has its own empty local library',b.evaluate('Hub.getLocal().length')==0);b.click('#selectVisibleFields');check('Non-owner reviewer cannot bulk-trash another member uploads',b.locator('#trashSelectedShared').is_disabled());other.close()
-  # Restore a verified portable local backup after clearing only browser copies.
   q.click('[data-scope="local"]');q.fill('#search','');q.click('#selectVisibleFields');saved=hashes(q)
   with q.expect_download() as event:q.click('#backupSelectedLocal')
   download=event.value;backup=OUT/'synthetic_local_backup.zip';download.save_as(str(backup));idle(q)
