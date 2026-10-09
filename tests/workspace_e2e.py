@@ -6,7 +6,6 @@ import base64, copy, datetime, functools, hashlib, http.server, io, json, re, te
 from urllib.parse import urlparse, parse_qs, unquote
 from playwright.sync_api import sync_playwright, Page, TimeoutError as BrowserTimeout
 ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'test-results/workspace';OUT.mkdir(parents=True,exist_ok=True)
-# Wait with CDP-backed evaluate. Do not add unsafe-eval to the site's CSP.
 def wait_predicate(self, expression, *, arg=None, timeout=None, polling=None):
  deadline=time.monotonic()+(60000 if timeout is None else timeout)/1000
  while True:
@@ -101,7 +100,10 @@ server=http.server.ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Quiet,d
 def check(name,ok):
  assert ok,name
  checks.append({'test':name,'passed':True});print('PASS',name,flush=True)
-def idle(q):q.wait_for_function('window.Hub && window.DeviceWorkspaceUI && !Hub.isBusy()',timeout=60000)
+def idle(q):
+ # Local recovery completes before independent cloud membership/loading.
+ # Do not assert an empty cloud immediately while authentication is still restoring.
+ q.wait_for_function('window.Hub && window.DeviceWorkspaceUI && !Hub.isBusy() && (!ReviewCloud.hasSession() || !!Hub.getUser())',timeout=60000)
 def config(route):route.fulfill(content_type='application/javascript',body="window.REVIEW_CONFIG={supabaseUrl:'https://mock.supabase.co',publishableKey:'sb_publishable_synthetic',bucket:'nuclei-private',pollSeconds:600};")
 def setup(ctx):
  ctx.route('**/config.js',config);ctx.route('https://mock.supabase.co/**',backend)
@@ -130,8 +132,9 @@ try:
   check('Fresh normal browser starts with zero local records',q.evaluate('Hub.getLocal().length')==0)
   q.click('#demo');idle(q);q.wait_for_function('Hub.getLocal().length===2');check('Two synthetic data types saved without cloud writes',len(tables['nr_collections'])==0 and len(objects)==0)
   check('New imports start unselected',q.evaluate('Hub.getLocal().every(r=>!r.selected)'))
+  q.locator('.select-field').first.check();check('Individual image checkboxes are usable after import',q.evaluate('Hub.getLocal().filter(r=>r.selected).length')==1);q.locator('.select-field').first.uncheck()
   originals=hashes(q)
-  open_local(q);q.click('[data-panel="comments"]');q.fill('#commentBody','Persistent local note A');q.click('#postComment');q.wait_for_function('Hub.getCurrent().feedback.comments.length===1');q.fill('#commentBody','Persistent local note B');q.click('#postComment');q.wait_for_function('Hub.getCurrent().feedback.comments.length===2');
+  open_local(q);q.click('[data-panel="comments"]');q.fill('#commentBody','Persistent local note A');q.click('#postComment');q.wait_for_function('Hub.getCurrent().feedback.comments.length===1');q.fill('#commentBody','Persistent local note B');q.click('#postComment');q.wait_for_function('Hub.getCurrent().feedback.comments.length===2');idle(q)
   geometry=q.evaluate('Hub.getCurrent().data.objects.map(o=>o.points)');q.click('#viewSplit');q.wait_for_timeout(150);check('Side-by-side view still works',q.locator('#compareOriginalPane').is_visible());q.screenshot(path=str(OUT/'comparison.png'));q.click('#closeViewer');q.fill('#search','SYNTHETIC_demo');q.click('#selectVisibleFields');q.wait_for_timeout(300)
   q.reload();idle(q);check('Native page reload restores source files and selection',q.evaluate('Hub.getLocal().length===2 && Hub.getLocal().filter(r=>r.selected).length===1'));check('All restored source byte hashes are unchanged',hashes(q)==originals)
   open_local(q);check('Saved local notes survive refresh',q.evaluate('Hub.getCurrent().feedback.comments.map(r=>r.body)')==['Persistent local note A','Persistent local note B']);check('ROI vertices unchanged after persistent restore',q.evaluate('Hub.getCurrent().data.objects.map(o=>o.points)')==geometry);q.click('#closeViewer');ctx.close()
@@ -146,13 +149,17 @@ try:
   q.evaluate("async()=>{const r=Hub.getLocal().find(x=>x.key==='extra_a');await Hub.importFiles([new File([await r.annotations[0].bytes()],'extra_a_rois.zip')]);}");idle(q)
   check('ROI-only import reuses its unique saved image and avoids identical duplicates',q.evaluate('Hub.getLocal().length')==4)
   q.fill('#search','');q.click('#selectVisibleFields');q.fill('#search','extra_a');check('Hidden selection is counted explicitly','3 selected item(s) are hidden' in q.locator('#hiddenSelectionInfo').inner_text());q.click('#selectVisibleFields');check('Select shown only clears hidden selections',q.evaluate('Hub.getLocal().filter(r=>r.selected).length')==1)
-  q.fill('#search','');q.click('#clearFieldSelection');q.screenshot(path=str(OUT/'local_library.png'))
+  q.fill('#search','');q.click('#clearFieldSelection');q.wait_for_timeout(350);q.screenshot(path=str(OUT/'local_library.png'))
   login(q,'a@test.invalid');fault['upload']=True;publish(q,'SYNTHETIC_demo')
   check('Injected upload failure leaves recoverable journal and saved local files',q.evaluate('Hub.hasPausedUpload()') and len(tables['nr_collections'])==1)
   q.reload();idle(q);q.wait_for_function('Hub.hasPausedUpload()');check('Reload restores pending upload without automatic network writes',len(tables['nr_collections'])==1 and q.evaluate('Hub.getLocal().length')==4)
   q.click('#retryPublish');idle(q);check('Upload resumes after reload without duplicate field or version',len(tables['nr_collections'])==1 and len(tables['nr_fields'])==1 and len(tables['nr_versions'])==1 and q.evaluate('!Hub.hasPausedUpload()'))
   check('Publishing retains all device copies',q.evaluate('Hub.getLocal().length')==4)
   publish(q,'SYNTHETIC_REFERENCE');check('Both types can be separately shared from persistent storage',q.evaluate('Hub.getShared().length')==2)
+  q.evaluate("()=>Hub.openField(Hub.getShared().find(r=>r.kind==='fiji'))");q.wait_for_function('!!Hub.getCurrent()?.feedback');q.click('[data-panel="comments"]')
+  for i in range(2):
+   q.fill('#commentBody','Shared synthetic comment '+str(i));q.click('#postComment');idle(q)
+  q.click('#select-comments');q.click('#remove-comments');q.wait_for_selector('#batchResultDialog[open]');close_result(q);check('Shared comments can be removed as a confirmed batch',len(tables['nr_comments'])==2 and all(r.get('removed_at') for r in tables['nr_comments']));q.click('#closeViewer')
   q.fill('#search','');q.click('[data-scope="shared"]');q.click('#selectVisibleFields');fid=q.evaluate('Hub.getShared()[0].id');fault['delete']=fid;q.click('#trashSelectedShared');q.wait_for_selector('#batchResultDialog[open]');
   check('Batch cloud removal reports partial failure instead of claiming all succeeded',len(q.evaluate('DeviceWorkspaceUI.getLastReport().filter(r=>!r.ok)'))==1 and q.evaluate('Hub.getShared().length')==1);check('Failed shared deletion stays selected',q.evaluate('Hub.getSharedSelection().size')==1);close_result(q);q.click('#trashSelectedShared');q.wait_for_selector('#batchResultDialog[open]');close_result(q)
   check('Removing last visible shared images updates both count and category filter',q.locator('#collectionCount').inner_text()=='0' and q.locator('#collectionFilter option').count()==1 and q.evaluate('Hub.getLocal().length')==4)
