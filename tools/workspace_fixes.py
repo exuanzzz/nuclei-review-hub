@@ -45,4 +45,44 @@ async function saveFeedback(type){
     old="kind:selection.info?.kind});emitState();"
     new="kind:selection.info?.kind});document.querySelectorAll('.select-field').forEach(ck=>ck.disabled=busy||restoringLocal);emitState();"
     if old in source:source=source.replace(old,new)
+    if 'compact-workspace-layout-v2' not in source:
+        source+=r'''
+// compact-workspace-layout-v2: show working controls instead of a long landing page.
+(function(){
+const style=document.createElement('style');
+style.textContent=`
+ body.has-library-items .hero{padding:15px 0 16px;align-items:center}
+ body.has-library-items .hero h1{font-size:27px;line-height:1.12;letter-spacing:-.8px}
+ body.has-library-items .hero p,body.has-library-items .hero .eyebrow{display:none}
+ body.has-library-items .hero-actions{flex-direction:row;flex-wrap:wrap;align-items:center;min-width:0;max-width:530px}
+ body.has-library-items .hero-actions button{padding:8px 12px;font-size:12px}
+ body.local-device-view .stats{display:none}
+ body.local-device-view #managementBar{display:none}
+ .local-library-panel{padding:12px 16px!important;margin:12px 0!important}
+ .local-library-panel h3{font-size:14px!important}
+ .local-library-panel header p{font-size:11px;margin-top:3px}
+ .local-library-panel details{font-size:11px;margin-top:8px;color:#65776f}
+ .local-library-panel details summary{cursor:pointer}
+ .local-library-panel .workspace-build{font-size:9px!important;margin-top:5px}
+ .bulk-selection-bar{margin:10px 0!important}
+ @media(max-width:760px){body.has-library-items .hero{gap:12px}body.has-library-items .hero h1{font-size:23px}.local-library-panel header{align-items:flex-start}}
+`;document.head.append(style);
+function update(){
+ const h=window.Hub;if(!h)return;const local=h.getScope()==='local';
+ document.body.classList.toggle('local-device-view',local);
+ document.body.classList.toggle('has-library-items',h.getLocal().length+h.getShared().length>0);
+ const bc=document.getElementById('breadcrumb');if(bc)bc.textContent=local?'Workspace / Local library (this device)':'Workspace / Shared library';
+ const box=document.getElementById('uploadTools');if(box)box.classList.toggle('hidden',!h.hasPausedUpload()&&(!local||!h.getLocal().some(r=>r.selected)));
+ const progress=document.getElementById('progressBox'),message=document.getElementById('progressText')?.textContent||'';
+ if(!h.isBusy()&&!h.hasPausedUpload()&&/^(Saved locally:|Collection published)/.test(message))progress?.classList.add('hidden');
+}
+window.addEventListener('nr:state',update);
+window.addEventListener('DOMContentLoaded',()=>requestAnimationFrame(()=>{
+ const warning=document.querySelector('.local-storage-warning');if(warning&&!warning.closest('details')){const detail=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Storage, privacy and backup limits';warning.before(detail);detail.append(summary,warning);}
+ const all=document.querySelector('[data-nav="all"]');if(all)all.textContent='▦  All image types';
+ const label=document.querySelector('.workspace-label');if(label)label.textContent='LIBRARY FILTERS';
+ update();
+}));
+})();
+'''
     return source
