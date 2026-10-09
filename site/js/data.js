@@ -28,10 +28,20 @@ async function load(r,progress=()=>{}){const a=await raw(r),d={...a,kind:r.kind,
  d.manifestFiles.push({path:r.image.name,role:'image',size:a.bytes.length,sha256:a.sha});
  if(r.annotations.length>LIMITS.objects)throw Error('Too many source annotations.');
  if(r.kind==='fiji'){
- if(r.annotations[0]){const b=await recordFile(r.annotations[0],'roi_zip');const es=(await C.zipEntries(new Blob([b]))).filter(x=>/\.roi$/i.test(x.name));if(es.length>LIMITS.objects)throw Error('Too many ROIs.');for(let i=0;i<es.length;i++){const e=es[i],rb=await e.bytes();const o=R.decodeROI(rb,e.name);o.index=i+1;o.sourceSha=await C.sha256(rb);o.ref=o.sourceSha+':'+e.name;o.bytes=rb;d.objects.push(o);}}
+ if(r.annotations[0]){const b=await recordFile(r.annotations[0],'roi_zip');const es=(await C.zipEntries(new Blob([b]))).filter(x=>/\.roi$/i.test(x.name));if(es.length>LIMITS.objects)throw Error('Too many ROIs.');for(let i=0;i<es.length;i++){const e=es[i],rb=await e.bytes();let o;try{o=R.decodeROI(rb,e.name);}catch(err){throw Error(r.image.name+' / '+e.name+': '+err.message);}o.index=i+1;o.sourceSha=await C.sha256(rb);o.ref=o.sourceSha+':'+e.name;o.bytes=rb;d.objects.push(o);}}
  const qc=R.analyseRois(d.objects,d.w,d.h);d.audit={type:'roi-coordinate-preservation',source:'Fiji ROI file coordinates; no smoothing or fitting',qc};
  for(const [k,v]of Object.entries(qc))if(v.length)d.warnings.push(k+': '+JSON.stringify(v));
- if(qc.outOfBounds.length)throw Error('ROI coordinates outside this image. No shifting or resizing is performed.');
+ // An area ROI is a geometric region, not a pixel-array index. Valid saved
+ // paths may extend beyond the image. Preserve them for review, never repair.
+ // Publication requires explicit acknowledgement of the warning in preflight.
+ if(qc.outOfBounds.length){
+  const outside=new Set(qc.outOfBounds);
+  d.audit.coordinate_review='required';
+  d.audit.image_extent={x:[0,d.w],y:[0,d.h]};
+  d.audit.out_of_bounds_details=d.objects.filter(o=>outside.has(o.index)).map(o=>({index:o.index,name:o.name,entry:o.entry,bounds:o.bounds.slice(),outside_by:{left:Math.max(0,-o.bounds[0]),top:Math.max(0,-o.bounds[1]),right:Math.max(0,o.bounds[2]-d.w),bottom:Math.max(0,o.bounds[3]-d.h)},fully_outside:o.bounds[2]<0||o.bounds[3]<0||o.bounds[0]>d.w||o.bounds[1]>d.h}));
+  for(const q of d.audit.out_of_bounds_details)d.warnings.push('CHECK COORDINATES — '+r.image.name+' / ROI '+q.index+' ('+q.name+'): bounds '+JSON.stringify(q.bounds)+', image [0,'+d.w+'] × [0,'+d.h+']; excess pixels '+JSON.stringify(q.outside_by)+(q.fully_outside?'; ENTIRE ROI OUTSIDE IMAGE':'')+'. Original coordinates retained; off-image portions are not visible in the image canvas. Check the source pairing and ROI in Fiji before training.');
+ }
+
  }else{
  let errors=0;for(let i=0;i<r.annotations.length;i++){const e=r.annotations[i],b=await recordFile(e,'mask'),o=await C.analyseMask(b,d.w,d.h);o.name=base(e.name);o.ref=o.report.source_sha256+':'+o.name;o.index=i+1;d.objects.push(o);errors+=o.report.mask_roundtrip_mismatches+o.report.boundary_rule_mismatches;progress(i+1,r.annotations.length);if(i%8===0)await new Promise(x=>setTimeout(x,0));}
  if(errors)throw Error('Mask fidelity verification failed.');
