@@ -1,0 +1,38 @@
+name: Test management SQL
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/04_Enable_Delete_And_Trash.sql'
+      - 'tests/management-sql.sql'
+      - '.github/workflows/test-management.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    container: postgres:17
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: nuclei_management_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable-ci-password-not-a-secret
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: disposable-ci-password-not-a-secret
+      PGDATABASE: nuclei_management_test
+    steps:
+      - uses: actions/checkout@v6
+      - name: Exercise migration, RLS and management RPCs with synthetic identities
+        run: psql --no-psqlrc -v ON_ERROR_STOP=1 -f tests/management-sql.sql
