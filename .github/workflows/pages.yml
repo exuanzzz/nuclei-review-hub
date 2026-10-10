@@ -18,9 +18,13 @@ jobs:
       - name: Install pinned native-browser test library
         run: pip install playwright==1.63.0
       - name: Build persistent local library and bulk review controls
-        run: python tools/integrate_workspace.py
+        run: |
+          python tools/integrate_workspace.py
+          python tools/add_select_all.py
       - name: Test reload, browser restart, backups and bulk operations
         run: python tests/workspace_e2e.py
+      - name: Test Select all across full image lists, comments and Trash
+        run: python tests/select_all_ui.py
       - name: Retain synthetic-only validation evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -28,6 +32,7 @@ jobs:
           name: workspace-validation
           path: |
             test-results/workspace/
+            test-results/select-all/
             site/js/app.js
             site/js/local-store.js
             site/js/workspace-ui.js
