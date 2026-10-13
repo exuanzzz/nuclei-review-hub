@@ -13,7 +13,7 @@ select checks.ok((select count(*)=4 from storage.objects),'Migration never chang
 select checks.ok((public.nr_registration_status()->>'email_confirmation_required')::boolean=false,'No-email registration policy is explicit');
 select checks.ok(not has_schema_privilege('authenticated','nr_registration_private','USAGE'),'Clients cannot edit private registration policy');
 set role anon;
-select checks.denied($q$select public.nr_prepare_collection_field('aaaaaaaa-aaaa-4aaa-aaaaaaaaaaaa','12345678-1234-4123-8123-123456789001','added','Added',320,240,repeat('a',64))$q$);
+select checks.denied($q$select public.nr_prepare_collection_field('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','12345678-1234-4123-8123-123456789001','added','Added',320,240,repeat('a',64))$q$);
 select checks.denied($q$select * from public.nr_fields$q$);
 reset role;set role authenticated;
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',false);
