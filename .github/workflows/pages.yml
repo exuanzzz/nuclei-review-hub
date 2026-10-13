@@ -1,7 +1,7 @@
 name: Deploy review frontend
 on:
   push:
-    branches: [main, feature/image-navigation-self-registration, feature/public-self-registration]
+    branches: [main, feature/image-navigation-self-registration, feature/public-self-registration, feature/flexible-uploads-no-email]
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,37 +17,40 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install pinned native-browser test library
         run: pip install playwright==1.63.0
-      - name: Build persistent local library and review controls
+      - name: Build persistent library and additive upload controls
         run: |
           python tools/integrate_workspace.py
           python tools/add_select_all.py
           python tools/add_image_navigation.py
           python tools/add_open_signup.py
+          python tools/add_flexible_uploads.py
+          for f in site/js/*.js; do node --check "$f"; done
       - name: Test reload, browser restart, backups and bulk operations
         run: python tests/workspace_e2e.py
-      - name: Test Select all across full image lists, comments and Trash
+      - name: Test Select all
         run: python tests/select_all_ui.py
-      - name: Test Previous and Next, filters, draft safety and shared version links
+      - name: Test Previous and Next
         run: python tests/image_navigation_ui.py
-      - name: Test public registration and first-login enrollment with mocked Auth only
+      - name: Test optional verified-email registration regression
         run: python tests/open_signup_ui.py
-      - name: Retain synthetic-only validation evidence
+      - name: Test no-email signup and adding images to existing collections
+        run: python tests/flexible_uploads_ui.py
+      - name: Retain synthetic-only validation evidence and exact migration
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: workspace-validation
           path: |
-            test-results/workspace/
-            test-results/select-all/
-            test-results/navigation/
-            test-results/registration/
+            test-results/
             site/js/app.js
             site/js/cloud.js
             site/js/local-store.js
             site/js/workspace-ui.js
             site/js/field-navigation.js
             site/js/signup-ui.js
+            site/js/collection-files.js
             site/index.html
+            supabase/migrations/06_Optional_Email_And_Append.sql
           retention-days: 14
       - name: Package only the tested frontend
         uses: actions/upload-pages-artifact@v4
@@ -69,7 +72,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v6
-      - name: Test enrollment in a disposable PostgreSQL instance only
+      - name: Test enrollment in disposable PostgreSQL
         shell: bash
         run: |
           set -euo pipefail
@@ -84,9 +87,40 @@ jobs:
           name: registration-database-validation
           path: test-results/registration-sql/
           retention-days: 14
+  append-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-only
+          POSTGRES_DB: nuclei_management_test
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nuclei_management_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test guarded append, trash filename reuse and no-email enrollment
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results/append-sql
+          docker cp tests "${{ job.services.postgres.id }}:/tmp/nuclei-tests"
+          docker cp supabase "${{ job.services.postgres.id }}:/tmp/supabase"
+          docker exec "${{ job.services.postgres.id }}" psql -U postgres -d nuclei_management_test -f /tmp/nuclei-tests/append_collection.sql 2>&1 | tee test-results/append-sql/log.txt
+      - name: Retain append test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: append-database-validation
+          path: test-results/append-sql/
+          retention-days: 14
   deploy:
     if: github.ref == 'refs/heads/main'
-    needs: [build, enrollment]
+    needs: [build, enrollment, append-database]
     runs-on: ubuntu-latest
     concurrency:
       group: pages-deployment
