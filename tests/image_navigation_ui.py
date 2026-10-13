@@ -64,6 +64,7 @@ try:
    fid='field-'+str(i);vid='version-'+str(i);path=vid+'/source.zip';objects[path]=base64.b64decode(r['bytes']);tables['nr_fields'].append(dict(id=fid,collection_id='collection',source_key=r['key'],name=r['name'],width=r['w'],height=r['h'],created_by=USER,image_sha256=r['sha']));tables['nr_versions'].append(dict(id=vid,field_id=fid,seq=1,state='ready',author_id=USER,object_path=path,thumbnail_path='missing.png',archive_sha256=r['archiveHash'],source_object_count=10,created_at='2026-01-01'))
   q.click('#loginOpen');q.fill('#email','tester@test.invalid');q.fill('#password','Synthetic-only-123');q.click('#loginForm button');wait(q,'Hub.getShared().length===3')
   q.evaluate("Hub.setScope('shared');Hub.openField(Hub.getShared()[0]);");wait(q,'!!Hub.getCurrent()?.data');q.click('#nextImage');wait(q,"Hub.getCurrent()?.record.id==='field-1' && !!Hub.getCurrent()?.data")
+  wait(q,"new URL(location.href).searchParams.get('version')==='version-1'")
   check('Shared navigation updates the version-specific review URL',parse_qs(urlparse(q.url).query).get('version')==['version-1'])
   q.set_viewport_size({'width':430,'height':920});q.wait_for_timeout(100);b=q.locator('#nextImage').bounding_box()
   check('Buttons stay inside narrow viewport',b is not None and b['x']>=0 and b['x']+b['width']<=430)
