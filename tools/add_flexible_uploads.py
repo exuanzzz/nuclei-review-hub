@@ -25,6 +25,7 @@ def signup(s):
  old="try{const s=await B.registrationStatus();available=s.enabled===true;status.textContent=available?'Open registration · email confirmation required · default role: Contributor':s.setupRequired?'The administrator has not installed registration update 05 yet. Existing members can still sign in.':'New registrations and automatic joining are currently paused. Existing members can still sign in.';}"
  new="""try{const s=await B.registrationStatus();available=s.enabled===true;
    const a=available?await B.emailRegistrationSettings():{};noEmail=s.email_confirmation_required===false&&a.mailer_autoconfirm===true;
+   $('magicLink').hidden=noEmail;
    status.textContent=available?(noEmail?'Open registration · no confirmation email · default role: Contributor':'Open registration · email confirmation required · default role: Contributor'):s.setupRequired?'The administrator has not installed registration update 05 yet. Existing members can still sign in.':'New registrations and automatic joining are currently paused. Existing members can still sign in.';
    intro.textContent=noEmail?'Choose a display name, email and password. Register and join automatically. The email is a login identifier, not verified proof of identity. No email-based password recovery is provided by this mode.':'Use your own email and password. Confirm your email, then sign in to join automatically as a Contributor. No invitation or individual approval is required.';
   }"""
@@ -41,10 +42,15 @@ def signup(s):
    nextResend=Date.now()+60000;message.textContent=""")
  s=s.replace('Verified users join as Contributors','Eligible signed-in users join as Contributors').replace('Allow any email-confirmed user to join as a Contributor','Allow any eligible signed-in user to join as a Contributor')
  s=s.replace("'public-self-registration-v1'","'flexible-upload-v1'")
+ s=s.replace('New users can create an account and confirm their email; workspace access is checked by the server.', 'New users can create an account. The registration form shows whether email confirmation is required. Workspace access is checked by the server.')
  s=replace(s,'window.addEventListener(\'nr:state\',sync);sync();',"""window.addEventListener('nr:state',sync);sync();
- Promise.all([B.registrationStatus(),B.emailRegistrationSettings()]).then(([r,a])=>{
-  if(r.email_confirmation_required===false&&a.mailer_autoconfirm===true)$('magicLink').hidden=true;
- }).catch(()=>{});""")
+ // Local-only browsing makes no authentication configuration requests.
+ new MutationObserver(()=>{
+  if(!$('loginDialog').open)return;
+  Promise.all([B.registrationStatus(),B.emailRegistrationSettings()]).then(([r,a])=>{
+   $('magicLink').hidden=r.email_confirmation_required===false&&a.mailer_autoconfirm===true;
+  }).catch(()=>{});
+ }).observe($('loginDialog'),{attributes:true,attributeFilter:['open']});""")
  return s
 edit('site/js/signup-ui.js',signup)
 def app(s):
@@ -87,4 +93,6 @@ edit('site/js/app.js',app)
 h=ROOT/'site/index.html';text=h.read_text()
 if 'js/collection-files.js' not in text:text=text.replace('</body>','<script src="js/collection-files.js"></script>\n</body>')
 h.write_text(text)
+# A Local collection target should not inherit an earlier cloud destination.
+p=ROOT/'site/js/collection-files.js';s=p.read_text();s=s.replace('targetMap.set(key,{...g});','targetMap.set(key,{...g,destination:undefined});');p.write_text(s)
 print('Optional email flow and additive uploads integrated; backend is unchanged until update 06 is run.')
