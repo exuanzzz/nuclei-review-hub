@@ -15,6 +15,9 @@ jobs:
     container: mcr.microsoft.com/playwright/python:v1.63.0-noble
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Install pinned native-browser test library
         run: pip install playwright==1.63.0
       - name: Build persistent library and additive upload controls
