@@ -66,3 +66,10 @@ if 'js/signup-ui.js' not in text:
     text=text.replace('</body>', '<script src="js/signup-ui.js"></script>\n</body>')
     h.write_text(text)
 print('Public registration UI installed; existing data, memberships and RLS are unchanged until migration 05 is applied.')
+
+# Remove obsolete invitation-only wording; backend rules still decide joining.
+h=ROOT/'site/index.html';text=h.read_text()
+text=text.replace('>Invite-only data<', '>Sign-in required<').replace('<h2>Invite-only workspace</h2>', '<h2>Workspace members</h2>').replace('PRIVATE TEAM ACCESS', 'WORKSPACE ACCESS')
+h.write_text(text)
+a=ROOT/'site/js/app.js';a.write_text(a.read_text().replace('Only previously invited Auth accounts can receive this link.', 'Only existing Auth accounts can receive this link.'))
+u=ROOT/'site/js/signup-ui.js';t=u.read_text();t=t.replace('submit.disabled=!available||sending;\n }', 'submit.disabled=!available||sending;mailControls();\n }');u.write_text(t)
