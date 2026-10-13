@@ -1,7 +1,7 @@
 name: Deploy review frontend
 on:
   push:
-    branches: [main, feature/image-navigation-self-registration, feature/public-self-registration, feature/flexible-uploads-no-email]
+    branches: [main, feature/image-navigation-self-registration, feature/public-self-registration, feature/flexible-uploads-no-email, fix/shared-previews]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,6 +27,7 @@ jobs:
           python tools/add_image_navigation.py
           python tools/add_open_signup.py
           python tools/add_flexible_uploads.py
+          python tools/add_thumbnail_loading.py
           for f in site/js/*.js; do node --check "$f"; done
       - name: Test reload, browser restart, backups and bulk operations
         run: python tests/workspace_e2e.py
@@ -38,6 +39,8 @@ jobs:
         run: python tests/open_signup_ui.py
       - name: Test no-email signup and adding images to existing collections
         run: python tests/flexible_uploads_ui.py
+      - name: Test actual thumbnail decoding, retry and bounded loading
+        run: python tests/thumbnail_preview_ui.py
       - name: Retain synthetic-only validation evidence and exact migration
         if: always()
         uses: actions/upload-artifact@v4
@@ -52,6 +55,7 @@ jobs:
             site/js/field-navigation.js
             site/js/signup-ui.js
             site/js/collection-files.js
+            site/js/thumbnail-loader.js
             site/index.html
             supabase/migrations/06_Optional_Email_And_Append.sql
           retention-days: 14
