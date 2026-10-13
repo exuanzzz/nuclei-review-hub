@@ -1,12 +1,12 @@
 name: Deploy review frontend
 on:
   push:
-    branches: [main]
+    branches: [main, feature/image-navigation-self-registration]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   build:
@@ -21,10 +21,13 @@ jobs:
         run: |
           python tools/integrate_workspace.py
           python tools/add_select_all.py
+          python tools/add_image_navigation.py
       - name: Test reload, browser restart, backups and bulk operations
         run: python tests/workspace_e2e.py
       - name: Test Select all across full image lists, comments and Trash
         run: python tests/select_all_ui.py
+      - name: Test Previous and Next, filters, draft safety and shared version links
+        run: python tests/image_navigation_ui.py
       - name: Retain synthetic-only validation evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -33,9 +36,11 @@ jobs:
           path: |
             test-results/workspace/
             test-results/select-all/
+            test-results/navigation/
             site/js/app.js
             site/js/local-store.js
             site/js/workspace-ui.js
+            site/js/field-navigation.js
             site/index.html
           retention-days: 14
       - name: Package only the tested frontend
@@ -43,8 +48,12 @@ jobs:
         with:
           path: site
   deploy:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages-deployment
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write
