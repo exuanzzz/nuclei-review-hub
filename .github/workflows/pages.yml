@@ -1,7 +1,7 @@
 name: Deploy review frontend
 on:
   push:
-    branches: [main, feature/image-navigation-self-registration, feature/public-self-registration, feature/flexible-uploads-no-email, fix/shared-previews]
+    branches: [main, feature/image-navigation-self-registration, feature/public-self-registration, feature/flexible-uploads-no-email, fix/shared-previews, fix/numeric-roi-pairing]
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,7 +28,12 @@ jobs:
           python tools/add_open_signup.py
           python tools/add_flexible_uploads.py
           python tools/add_thumbnail_loading.py
+          python tools/add_numeric_rois.py
           for f in site/js/*.js; do node --check "$f"; done
+      - name: Test numeric names, ambiguous associations and original ROI archive bytes
+        run: |
+          node tests/numeric_roi_plan.js
+          python tests/numeric_roi_ui.py
       - name: Test reload, browser restart, backups and bulk operations
         run: python tests/workspace_e2e.py
       - name: Test Select all
@@ -48,15 +53,10 @@ jobs:
           name: workspace-validation
           path: |
             test-results/
-            site/js/app.js
-            site/js/cloud.js
-            site/js/local-store.js
-            site/js/workspace-ui.js
-            site/js/field-navigation.js
-            site/js/signup-ui.js
-            site/js/collection-files.js
-            site/js/thumbnail-loader.js
-            site/index.html
+            site/
+            tools/
+            tests/numeric_roi_plan.js
+            tests/numeric_roi_ui.py
             supabase/migrations/06_Optional_Email_And_Append.sql
           retention-days: 14
       - name: Package only the tested frontend
