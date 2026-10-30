@@ -1,0 +1,23 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const base=s=>s.split(/[\\/]/).pop();
+const sampleKey=s=>base(s).replace(/\.tiff?$/i,'').replace(/\.ome_DAPI$/i,'').replace(/_DAPI$/i,'').replace(/\.ome$/i,'').toLowerCase();
+global.ReviewData={base};global.ROIReview={sampleKey};global.GTCore={};
+vm.runInThisContext(fs.readFileSync('site/js/numeric-rois.js','utf8'));
+const P=NumericRois,im=n=>({name:n}),roi=n=>({name:n,roiArchive:true,roiCount:10});let n=0;
+function test(name,fn){fn();n++;console.log('PASS:',name);}
+test('Original named ZIP matching remains exact with no new dialog',()=>{const p=P.plan([im('H2170_72h_Nera_2.ome_DAPI.tif'),roi('ROIs/H2170_72h_Nera_2_rois.zip')]);assert.equal(p.rows[0].archive,0);assert.equal(p.review,false);});
+test('2.zip maps to image number 2, not first file position',()=>{const p=P.plan([im('H2170_72h_Nera_4.ome_DAPI.tif'),im('H2170_72h_Nera_2.ome_DAPI.tif'),roi('ROIs/2.zip'),roi('ROIs/4.zip')]);assert.equal(p.rows[0].archive,0);assert.equal(p.rows[1].archive,1);assert(p.review);});
+test('No ordinal fallback when image numbers are missing',()=>{const p=P.plan([im('sample_2.tif'),im('sample_4.tif'),roi('1.zip'),roi('2.zip')]);assert.equal(p.rows[0].archive,1);assert.equal(p.rows[1].archive,-1);assert(p.issues.some(x=>x.includes('1.zip')));});
+test('Leading zeros normalize only for numeric matching',()=>assert.equal(P.plan([im('sample_2.tif'),roi('0002.zip')]).rows[0].archive,0));
+test('Numeric _rois.zip also works',()=>assert.equal(P.plan([im('sample_2.tif'),roi('2_rois.zip')]).rows[0].archive,0));
+test('Two cell lines with image number 2 do not get an arbitrary match',()=>{const p=P.plan([im('A_2.tif'),im('B_2.tif'),roi('2.zip')]);assert(p.rows.every(x=>x.archive===-1));});
+test('Two candidate ZIPs require a choice',()=>{const p=P.plan([im('sample_2.tif'),roi('2.zip'),roi('sample_2_rois.zip')]);assert.equal(p.rows[0].archive,-1);});
+test('Cell line number alone is never treated as final image number',()=>assert.equal(P.imageNumber('h2170'),null));
+test('Same-basename images across folders are not collapsed',()=>assert.throws(()=>P.plan([im('A/sample_2.tif'),im('B/sample_2.tif')]),/More than one TIFF/));
+test('Loose numbered ROI files are not mistaken for separate image sets',()=>{const p=P.plan([im('sample_1.tif'),im('1.roi'),im('2.roi')]);assert.equal(p.archives.length,0);assert.equal(p.loose.length,2);assert(p.review);});
+test('ZIP path and bytes reader remain the original source object',()=>{const a=roi('ROIs/2.zip'),p=P.plan([im('sample_2.tif'),a]);assert.strictEqual(P.records(p,[0],false)[0].annotations[0],a);});
+test('Reusing one archive on two images is rejected',()=>{const p=P.plan([im('a_1.tif'),im('b_2.tif'),roi('1.zip')]);assert.throws(()=>P.records(p,[0,0],false),/assigned twice/);});
+test('Manual mapping allows ordinal names without automatic guessing',()=>{const p=P.plan([im('sample_2.tif'),im('sample_4.tif'),roi('1.zip'),roi('2.zip')]);const r=P.records(p,[0,1],false);assert.equal(r[0].annotations[0].name,'1.zip');assert.equal(r[1].annotations[0].name,'2.zip');});
+test('Image-only rows are included only by explicit choice in review dialog',()=>{const p=P.plan([im('sample_2.tif'),im('sample_4.tif'),roi('2.zip')]);assert.equal(P.records(p,[0,-1],false).length,1);assert.equal(P.records(p,[0,-1],true).length,2);});
+console.log(n+' numeric matching tests passed');
