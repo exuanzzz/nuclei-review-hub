@@ -9,18 +9,19 @@ ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'test-results/guests';OUT.mkdi
 A='11111111-1111-4111-8111-111111111111'
 tables={x:[] for x in ['nr_collections','nr_fields','nr_versions','nr_comments','nr_proposals','nr_reviews']}
 tables['nr_members']=[dict(user_id=A,display_name='Owner',role='admin',active=True)]
-users={A:{'id':A,'email':'owner@example.invalid','is_anonymous':False}};objects={};calls=[];errors=[];checks=[]
+users={A:{'id':A,'email':'owner@example.invalid','is_anonymous':False}};objects={};calls=[];errors=[];checks=[];console=[];network_errors=[]
 state={'enabled':True,'provider':True,'signup':True,'signup_count':0,'refresh_count':0,'failure':False,'revoked':set()}
+CORS={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Access-Control-Allow-Headers':'authorization,apikey,content-type,x-upsert,prefer'}
 def now():return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def session(uid):return dict(access_token=uid,refresh_token=uid,expires_in=3600,user=users[uid])
 def answer(route,obj=None,status=200,raw=None):
- route.fulfill(status=status,body=raw if raw is not None else json.dumps(obj),content_type='application/octet-stream' if raw is not None else 'application/json',headers={'Access-Control-Allow-Origin':'*'})
+ route.fulfill(status=status,body=raw if raw is not None else json.dumps(obj),content_type='application/octet-stream' if raw is not None else 'application/json',headers=CORS)
 def api(route):
  req=route.request;u=urlparse(req.url);p=unquote(u.path);qp=parse_qs(u.query);raw=req.post_data_buffer or b''
  try:body=json.loads(raw) if raw else {}
  except (ValueError,UnicodeDecodeError):body={}
  uid=req.headers.get('authorization','').removeprefix('Bearer ');calls.append((req.method,p,copy.deepcopy(body)))
- if req.method=='OPTIONS':return route.fulfill(status=204,headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,PUT,OPTIONS','Access-Control-Allow-Headers':'*'})
+ if req.method=='OPTIONS':return route.fulfill(status=204,headers=CORS)
  if p=='/rest/v1/rpc/nr_guest_access_status':return answer(route,dict(enabled=state['enabled'],default_role='reviewer'))
  if p=='/rest/v1/rpc/nr_registration_status':return answer(route,dict(enabled=True,email_confirmation_required=False))
  if p=='/auth/v1/settings':return answer(route,dict(external={'email':True,'anonymous_users':state['provider']},disable_signup=not state['signup'],mailer_autoconfirm=True))
@@ -92,7 +93,6 @@ def check(name,value):
  assert value,name
  checks.append({'test':name,'passed':True});print('PASS',name,flush=True)
 def wait(q,expr,timeout=25):
- until=time.monotonic()<0
  until=time.monotonic()+timeout
  while time.monotonic()<until:
   if q.evaluate(expr):return
@@ -105,7 +105,7 @@ def setup(ctx):
   else:raise AssertionError('Unexpected external network: '+r.request.url)
  ctx.route('https://**',route)
 def page(ctx):
- q=ctx.new_page();q.on('pageerror',lambda e:errors.append(str(e)));q.goto(URL);return q
+ q=ctx.new_page();q.on('pageerror',lambda e:errors.append(str(e)));q.on('console',lambda m:console.append(m.type+': '+m.text));q.on('requestfailed',lambda r:network_errors.append(r.url+': '+str(r.failure)));q.goto(URL);return q
 def ready(q):wait(q,'!!window.ReviewGuest && !!Hub.getUser() && !Hub.isBusy()')
 try:
  with sync_playwright() as pw:
@@ -152,4 +152,4 @@ try:
   check('No Javascript runtime errors',not errors)
   b.close()
 finally:
- server.shutdown();(OUT/'report.json').write_text(json.dumps({'scope':'Real Chromium, native IndexedDB; mocked Auth, REST and Storage. Synthetic files only; no production uploads or user creation.','checks':checks,'passed':len(checks),'errors':errors},indent=2))
+ server.shutdown();(OUT/'report.json').write_text(json.dumps({'scope':'Real Chromium, native IndexedDB; mocked Auth, REST and Storage. Synthetic files only; no production uploads or user creation.','checks':checks,'passed':len(checks),'errors':errors,'console':console,'network_errors':network_errors,'api_calls':[(m,p) for m,p,_ in calls]},indent=2))
