@@ -1,7 +1,7 @@
 name: Deploy review frontend
 on:
   push:
-    branches: [main, feature/image-navigation-self-registration, feature/public-self-registration, feature/flexible-uploads-no-email, fix/shared-previews, fix/numeric-roi-pairing]
+    branches: [main, feature/image-navigation-self-registration, feature/public-self-registration, feature/flexible-uploads-no-email, fix/shared-previews, fix/numeric-roi-pairing, feature/registration-free-guests]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,7 +11,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     container: mcr.microsoft.com/playwright/python:v1.63.0-noble
     steps:
       - uses: actions/checkout@v6
@@ -46,6 +46,15 @@ jobs:
         run: python tests/flexible_uploads_ui.py
       - name: Test actual thumbnail decoding, retry and bounded loading
         run: python tests/thumbnail_preview_ui.py
+      - name: Integrate registration-free guests without changing source decoders
+        run: |
+          python tools/add_guest_access.py
+          for f in site/js/*.js; do node --check "$f"; done
+      - name: Test guest identity, uploads, shared review and owner access
+        run: python tests/guest_ui.py
+      - name: Read public service readiness without creating accounts
+        if: always()
+        run: python tests/guest_service_probe.py
       - name: Retain synthetic-only validation evidence and exact migration
         if: always()
         uses: actions/upload-artifact@v4
@@ -57,6 +66,8 @@ jobs:
             tools/
             tests/numeric_roi_plan.js
             tests/numeric_roi_ui.py
+            tests/guest_ui.py
+            tests/guest_service_probe.py
             supabase/migrations/06_Optional_Email_And_Append.sql
           retention-days: 14
       - name: Package only the tested frontend
@@ -106,7 +117,6 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres -d nuclei_management_test"
           --health-interval 5s
-          --health-timeout 5s
           --health-retries 10
     steps:
       - uses: actions/checkout@v6
