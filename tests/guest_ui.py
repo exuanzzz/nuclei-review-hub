@@ -100,10 +100,8 @@ def wait(q,expr,timeout=25):
  q.screenshot(path=str(OUT/'failure.png'));raise AssertionError(expr+'; '+q.locator('#toast').inner_text())
 def setup(ctx):
  ctx.route('**/config.js',lambda r:r.fulfill(content_type='application/javascript',body="window.REVIEW_CONFIG={supabaseUrl:'https://guest-mock.supabase.co',publishableKey:'sb_publishable_mock',bucket:'nuclei-private',pollSeconds:600};"))
- def route(r):
-  if urlparse(r.request.url).hostname=='guest-mock.supabase.co':api(r)
-  else:raise AssertionError('Unexpected external network: '+r.request.url)
- ctx.route('https://**',route)
+ ctx.route('https://guest-mock.supabase.co/**',api)
+ ctx.on('request',lambda r:None if urlparse(r.url).hostname in ['127.0.0.1','guest-mock.supabase.co',None] else (_ for _ in ()).throw(AssertionError('Unexpected external request: '+r.url)))
 def page(ctx):
  q=ctx.new_page();q.on('pageerror',lambda e:errors.append(str(e)));q.on('console',lambda m:console.append(m.type+': '+m.text));q.on('requestfailed',lambda r:network_errors.append(r.url+': '+str(r.failure)));q.goto(URL);return q
 def ready(q):wait(q,'!!window.ReviewGuest && !!Hub.getUser() && !Hub.isBusy()')
