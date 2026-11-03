@@ -51,7 +51,7 @@ jobs:
           python tools/add_guest_access.py
           for f in site/js/*.js; do node --check "$f"; done
       - name: Test guest identity, uploads, shared review and owner access
-        run: python tests/guest_ui.py
+        run: python tests/run_guest_checked.py
       - name: Read public service readiness without creating accounts
         if: always()
         run: python tests/guest_service_probe.py
@@ -67,6 +67,7 @@ jobs:
             tests/numeric_roi_plan.js
             tests/numeric_roi_ui.py
             tests/guest_ui.py
+            tests/run_guest_checked.py
             tests/guest_service_probe.py
             supabase/migrations/06_Optional_Email_And_Append.sql
           retention-days: 14
@@ -117,6 +118,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres -d nuclei_management_test"
           --health-interval 5s
+          --health-timeout 5s
           --health-retries 10
     steps:
       - uses: actions/checkout@v6
