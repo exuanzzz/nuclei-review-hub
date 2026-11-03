@@ -132,10 +132,11 @@ try:
   check('Guest submits a separate polygon proposal without overwriting source ROI',tables['nr_proposals'][0]['author_id']==g and len(tables['nr_versions'])==1)
   q.evaluate('document.getElementById("verdict").value="needs_changes";document.getElementById("decisionBody").value="Synthetic review";Hub.saveFeedback("reviews");');wait(q,'!Hub.isBusy() && Hub.getCurrent().feedback.reviews.length===1')
   check('Guest records review decisions',len(tables['nr_reviews'])==1)
-  check('Guest cannot approve own source version',q.locator('#verdict option[value=approved]').is_disabled())
+  # Inspect native option state; locator actionability varies for hidden select options.
+  check('Guest cannot approve own source version',q.locator('#verdict option[value=approved]').evaluate('(option)=>option.disabled') and q.evaluate('Hub.getCurrent().version.author_id===Hub.getUser().user_id'))
   q.screenshot(path=str(OUT/'guest_viewer.png'))
   other=b.new_context();setup(other);o=page(other);ready(o);o.evaluate('Hub.openField(Hub.getShared()[0])');wait(o,'!!Hub.getCurrent()?.data')
-  check('Another guest can view published sources and approve another author',not o.locator('#verdict option[value=approved]').is_disabled())
+  check('Another guest can view published sources and approve another author',not o.locator('#verdict option[value=approved]').evaluate('(option)=>option.disabled') and o.evaluate('Hub.getCurrent().version.author_id!==Hub.getUser().user_id'))
   wait(o,'document.getElementById("trashCurrent").classList.contains("hidden") || document.getElementById("trashCurrent").disabled')
   check('Other-author image deletion stays unavailable',o.locator('#trashCurrent').is_hidden() or o.locator('#trashCurrent').is_disabled())
   other.close();q.click('#closeViewer')
